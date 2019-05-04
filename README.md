@@ -1,6 +1,6 @@
 # Fungi ( Rust )
 
-## Another Game Engine?
+### Another Game Engine?
 
 This is a port of my Javascript / WebGL 2.0 engine. It's a learning experience to learn Rust and Web Assembly.
 Ideally this project will be slow as the Javascript version will be the one I will spent most of my time
