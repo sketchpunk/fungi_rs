@@ -12,10 +12,22 @@ So for now the main focus of the Rust version is to get some basic 3D stuff runn
 ### Things to do
 
 - [x] Running as a Web Assembly Module
-- [x] State and Rende Loop
+- [x] State and Render Loop
 - [ ] Port Fungi.js Math Library to Rust
-- [ ] Build Simple ECS Framework
-- [ ] Handle Mouse and Keyboard Input
+- [x] Build Simple ECS Framework
+- [ ] Create Extra Storage Types for ECS ( SparseVec, Hashmap )
+- [x] Shader Support
+- [x] Orbit Camera
+- [x] Handle Mouse Input
+- [ ] Visual Debugging Features
+- [ ] Primatives (Done: Quad, Grid Floor, Need: Cube, Sphere, Verts, Lines )
+- [ ] Handle Keyboard Input
+- [ ] Uniform Object Buffers
+- [ ] Custom Frame Buffers
+- [ ] Texture Handling
+- [ ] GLTF Support
+- [ ] Armature / Skinning / Animation System
+- [ ] Inverse Kinematrics
 
 ### Links
 - [Running Demo of Fungi Rust](http://fungi.sketchpunk.com/rust/)

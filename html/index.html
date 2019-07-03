@@ -1,6 +1,12 @@
-<html><head></head><body>
-<canvas id="main_canvas" style="border:1px solid red;" width="400px" height="400px"></canvas>
+<html><head>
+<style>
+	html, body { margin:0px; padding:0px; width:100%; height:100%; }
+	canvas{ width:100vw; height:100vh; box-sizing: border-box; }
+</style>
+</head><body>
+<canvas id="main_canvas" style="border:0px solid red;"></canvas>
 <script type="module">
+	
 	import Wasm, * as Fungi from './fungi_rs.js';
 
 	let gApp;
@@ -9,14 +15,181 @@
 		setTimeout(()=>{
 			gApp = new Fungi.App( "main_canvas" );
 			gApp.init();
-			render();
 
+			console.log( gApp );
+			render();
 		}, 50 );
 	});
+	/**/
 
 	function render(){
+		gApp.pass_mouse_state( 
+			gMouse.is_down,
+			gMouse.is_shift,
+			gMouse.is_ctrl,
+			gMouse.wheel_value,
+			gMouse.coord.idx,
+			gMouse.coord.idy,
+			gMouse.pos_version,
+			gMouse.wheel_version
+		);
+
 		gApp.render();
 		window.requestAnimationFrame( render );
+	}
+
+
+	let gMouse;
+	window.addEventListener("load", e=>{
+		console.log("Page Loaded");
+		
+		canvas_size();
+		gMouse = new MouseTracker( "main_canvas" );
+	});
+
+
+	function canvas_size(){
+		let c = document.getElementById("main_canvas");
+		let w = c.clientWidth,
+			h = c.clientHeight;
+		
+		c.style.width	= w + "px";
+		c.style.height	= h + "px";
+		c.width 		= w;
+		c.height 		= h;
+	}
+
+
+	class MouseTracker{
+		constructor( cname ){
+			this.pos_version	= 0;
+			this.wheel_version	= 0;
+
+			this.is_down		= false;
+			this.is_shift		= false;
+			this.is_ctrl		= false;
+
+			this.is_left		= false;
+			this.is_middle		= false;
+			this.is_right		= false;
+
+			this.wheel_value 	= 0;
+			this.coord = {
+				x:0,	//current position
+				y:0,
+				ix:0,	//initial down position
+				iy:0,
+				px:0,	//previous move position
+				py:0,
+				idx:0,	//Delta since inital
+				idy:0,
+				pdx:0,	//Delta since previous
+				pdy:0
+			};
+
+			this.elm 		= document.getElementById( cname );
+
+			var box			= this.elm.getBoundingClientRect();
+			this.offsetX	= box.left;	// Help get X,Y in relation to the canvas position.
+			this.offsetY	= box.top;
+
+			this._boundMouseMove = this.onMouseMove.bind(this); //Reused often, so save bound reference
+			this.elm.addEventListener("contextmenu",this.onContextMenu );
+			this.elm.addEventListener("mousedown",	this.onMouseDown.bind(this) );
+			this.elm.addEventListener("mouseup",	this.onMouseUp.bind(this) );
+			this.elm.addEventListener("mouseout",	this.onMouseUp.bind(this) );
+			this.elm.addEventListener("mousewheel",	this.onMouseWheel.bind(this) );
+		}
+
+
+	//////////////////////////////////////////////////////////////////
+	// MOUSE
+	//////////////////////////////////////////////////////////////////
+		toCoord( e ){ return [ e.pageX - this.offsetX, e.pageY - this.offsetY ]; }
+
+		updateCoords(e){
+			// Previous Position
+			this.coord.px	= this.coord.x;
+			this.coord.py	= this.coord.y;
+
+			// Current Position
+			this.coord.x	= e.pageX - this.offsetX;
+			this.coord.y	= e.pageY - this.offsetY;
+
+			// Change since Previous
+			this.coord.pdx	= this.coord.x - this.coord.px;
+			this.coord.pdy	= this.coord.y - this.coord.py;
+
+			// Change Since Initial
+			this.coord.idx	= this.coord.x - this.coord.ix;
+			this.coord.idy	= this.coord.y - this.coord.iy;
+
+			this.is_shift 	= e.shiftKey;
+			this.is_ctrl	= e.ctrlKey;
+			this.pos_version++;	
+		}
+
+		onContextMenu(e){ e.preventDefault(); e.stopPropagation(); return false; }
+
+		onMouseWheel( e ){
+			e.preventDefault(); e.stopPropagation();
+
+			this.wheel_value = Math.max(-1, Math.min(1, (e.wheelDelta || -e.detail))); //Try to map wheel movement to a number between -1 and 1	
+			this.wheel_version++;
+
+			//console.log( this.wheel_value );
+		}
+
+		onMouseDown(e){
+			e.preventDefault(); e.stopPropagation();
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~			
+			this.pos_version++;
+			this.is_shift 	= e.shiftKey;
+			this.is_ctrl	= e.ctrlKey;
+			this.coord.ix	= this.coord.px		= this.coord.x		= e.pageX - this.offsetX;
+			this.coord.iy	= this.coord.py		= this.coord.y		= e.pageY - this.offsetY;
+			this.coord.pdx	= this.coord.idx	= this.coord.pdy	= this.coord.idy = 0;
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// If no mouse buttons was previously active, start tracking mouse move
+			if(	!this.is_down ){
+				this.elm.addEventListener("mousemove", this._boundMouseMove );
+			}
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			switch(e.which){
+				case 1: this.is_left	= true; break;
+				case 2: this.is_middle	= true; break;
+				case 3: this.is_right	= true; break;
+			}
+
+			this.is_down = (this.is_left || this.is_middle || this.is_right);
+		}
+
+		onMouseMove(e){ 
+			e.preventDefault(); e.stopPropagation(); this.updateCoords(e);
+		}
+
+		onMouseUp(e){
+			e.preventDefault(); e.stopPropagation();
+			this.updateCoords(e);
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			switch(e.which){
+				case 1: this.is_left	= false; break;
+				case 2: this.is_middle	= false; break;
+				case 3: this.is_right	= false; break;
+			}
+
+			this.is_down = (this.is_left || this.is_middle || this.is_right);
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			// If No mouse buttons are active, disable mouse move.
+			if(!this.is_down){
+				this.elm.removeEventListener("mousemove", this._boundMouseMove );
+			}
+		}
 	}
 </script>
 </body></html>
