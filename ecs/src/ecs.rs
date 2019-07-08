@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use crate::App;
 use super::{ ComponentManager, EntityManager, SystemManager, ICom };
 
 pub struct Ecs{
@@ -67,5 +66,5 @@ impl Ecs{
 	// Systems
 	///////////////////////////////////////////////////////////////
 
-		pub fn run_sys( &self, app: &App ){ self.sm.run( app ); }
+		pub fn run_sys( &self, ecs: &Ecs ){ self.sm.run( ecs ); }
 }

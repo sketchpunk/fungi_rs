@@ -3,7 +3,7 @@
 use std::fmt;
 use std::cell::{ RefCell };
 use super::Ecs;
-use crate::App;
+//use crate::App;
 
 //#############################################################################
 	// Store different types of System executors.
@@ -13,11 +13,13 @@ use crate::App;
 	}
 
 	// System can just be a Function pointer, this is the signature
-	type SysFn = fn( app: &App );
+	//type SysFn = fn( app: &App );
+	type SysFn = fn( ecs: &Ecs );
 
 	// Or if keeping internal state, must implmenet the trait
 	pub trait System{
-		fn run( &mut self, app: &App );
+		//fn run( &mut self, app: &App );
+		fn run( &mut self, ecs: &Ecs );
 	}
 
 
@@ -116,17 +118,35 @@ impl SystemManager{
 	///////////////////////////////////////////////////////////
 
 		// Execute All the Systems
-		pub fn run( &self, app: &App ) -> &Self {
+		//pub fn run( &self, app: &App ) -> &Self {
+		pub fn run( &self, ecs: &Ecs ) -> &Self {
 			for i in self.items.iter(){
 				if i.active {
 					match &i.exe {
-						Executor::Fn{ exe } => exe( app ),
-						Executor::Tr{ exe } => exe.borrow_mut().run( app ),
+						//Executor::Fn{ exe } => exe( app ),
+						//Executor::Tr{ exe } => exe.borrow_mut().run( app ),
+						
+						Executor::Fn{ exe } => exe( ecs ),
+						Executor::Tr{ exe } => exe.borrow_mut().run( ecs ),
 					}
 				}
 			}
 			self
 		}
+
+		/*
+		pub fn run_range( &self, a: u16, b: u16, app: &App ) -> &Self{
+			for i in self.items.iter(){
+				if i.active && i.priority >= a && i.priority <= b {
+					match &i.exe {
+						Executor::Fn{ exe } => exe( app ),
+						Executor::Tr{ exe } => exe.borrow_mut().run( app ),
+					}	
+				}
+			}
+			self
+		}
+		*/
 }
 
 #[allow(unused_variables)]

@@ -43,9 +43,12 @@ impl DynamicVert{
 
 
 //############################################################
-pub fn dynamic_vert_sys_fn( app: &App ){
-	let mut sm	= app.ecs.cm.borrow_mut::<DynamicVert>();
-	let mut vc	= app.cache.vao.borrow_mut();
+pub fn dynamic_vert_sys_fn( ecs: &crate::ecs::Ecs ){
+	let ws_r = crate::World::get();
+	let ws = ws_r.borrow();
+
+	let mut sm	= ecs.cm.borrow_mut::<DynamicVert>();
+	let mut vc	= ws.cache.vao.borrow_mut();
 
 	for dv in sm.iter_mut(){
 		if dv.is_mod {

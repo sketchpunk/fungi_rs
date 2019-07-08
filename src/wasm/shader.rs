@@ -115,7 +115,7 @@ impl Shader{
 		}
 
 		// Update Shader Uniform on the GPU
-		pub fn f32_array( &self, name: &str, ary: &[f32] ) -> &Self {
+		pub fn set_f32_array( &self, name: &str, ary: &[f32] ) -> &Self {
 			let gl = glctx();
 
 			match self.uniforms.get( name ) {
@@ -135,10 +135,24 @@ impl Shader{
 					UniformType::Mat4	=> gl.uniform_matrix4fv_with_f32_array( Some( &u.loc ), false, ary ),
 
 					//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-					_ => console_log!( "Unknown Uniform Type put_f32_array {}", name ),
+					_ => console_log!( "Unknown Uniform Type set_f32_array {}", name ),
 				},
 			}
 
+			self
+		}
+
+
+		pub fn add_uniform_block( &mut self, name: &str, bind_pnt: u32 ) -> &mut Self{
+			let gl		= glctx();
+			let b_idx	= gl.get_uniform_block_index( &self.prog, name );
+
+			if b_idx > 1000 {
+				console_log!("Ubo: {}, not found in shader: {}", name, self.name );
+				return self;
+			}
+			console_log!("Add Uniform {}", b_idx );
+			gl.uniform_block_binding( &self.prog, b_idx, bind_pnt );
 			self
 		}
 }
@@ -235,6 +249,20 @@ pub struct ShaderCache( pub RecycleStorage< Shader > );
 
 impl ShaderCache{
 	pub fn new() -> Self{ ShaderCache( RecycleStorage::new() ) }
+
+	pub fn get_idx( &self, name: &str ) -> Option<usize>{
+		use crate::storage::recycle_storage::Item;
+
+		for i in 0..self.0.items.len(){
+			match &self.0.items[ i ] {
+				Item::Active{ data } => {
+					if data.name.eq( name ) { return Some( i ); }
+				}, _ => (),
+			}
+		}
+
+		None
+	}
 }
 
 impl Deref for ShaderCache{

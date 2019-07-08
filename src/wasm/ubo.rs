@@ -1,24 +1,14 @@
+use web_sys::{ WebGl2RenderingContext as GL };
+
 use std::collections::HashMap;
-use web_sys::{ WebGlBuffer, WebGl2RenderingContext as GL };
+use std::ops::{ Deref, DerefMut };
+
 use super::{ glctx, Buffer };
 
-//https://stackoverflow.com/questions/29445026/converting-number-primitives-i32-f64-etc-to-byte-representations
+// [[ NOTES ]]
+// http://www.geeks3d.com/20140704/gpu-buffers-introduction-to-opengl-3-1-uniform-buffers-objects/
 
-#[derive(Debug)]
-pub struct UboSpec{
-	offset		: usize,
-	data_type	: DataType,
-}
-
-#[derive(Debug)]
-pub struct Ubo{
-	ctx			: WebGlBuffer,
-	name		: String,
-	bind_point	: u32,
-	byte_len	: usize,
-	bytes		: Vec<u8>,
-	items		: HashMap<String, UboSpec>,
-}
+//####################################################################################
 
 #[derive(Debug, Clone)]
 pub enum DataType{
@@ -33,6 +23,11 @@ pub enum DataType{
 	Vec4,
 }
 
+
+//####################################################################################
+
+pub struct UboBuilder{ items: Vec<Item> }
+
 #[derive(Debug)]
 struct Item{
 	name 		: String,
@@ -44,68 +39,31 @@ struct Item{
 }
 
 
-impl Item{
-	pub fn new( name: &str, data_type: DataType, ary_len: u32 ) -> Self{
-		Item{ 
+impl UboBuilder{
+	pub fn new() -> Self { UboBuilder{ items: Vec::new() } }
+
+	// Add Variable Item
+	pub fn add( &mut self, name: &str, data_type: DataType, ary_len: u32 ) -> &mut Self{
+		self.items.push( Item{ 
 			name		: name.to_string(),
 			offset		: 0,
 			block_size	: 0,
 			data_size	: 0,
 			data_type, 
 			ary_len,
-		}
-	}
-}
-
-/*
-	Ubo .addItem( ubo, "bones", "mat2x4", 90 )
-		.addItem( ubo, "scale", "vec3", 90 )
-		.addItem( ubo, "boneCount", "int" )
-		.finalize( ubo, 4 );
-
-	static addItem(ubo, iName, iType, aryLen = 0){ 
-		ubo.items.set( iName, {type:iType, offset: 0, blockSize: 0, dataSize: 0, aryLen } );
-		return Ubo;
-	}
-
-	let bld = UboBuilder::new();
-	bld
-		.add( "name", DataType.Vec3, 0 )
-		.int()
-
-				case "float": case "int": case "b": return [4,4];
-				case "mat2x4":	return [32,32]; //16*2
-				case "mat4": 	return [64,64]; //16*4
-				case "mat3":	return [48,48]; //16*3
-				case "vec2":	return [8,8];
-				case "vec3":	return [16,12]; //Special Case
-				case "vec4":	return [16,16];
-				default:		return [0,0];
- */
-
-pub struct UboBuilder{
-	items: Vec<Item>,
-}
-
-
-impl UboBuilder{
-	pub fn new() -> Self {
-		UboBuilder{ items: Vec::new() }
-	}
-
-	pub fn add( &mut self, name: &str, dtype: DataType, ary_len: u32 ) -> &mut Self{
-		self.items.push( Item::new( name, dtype, ary_len) );
+		});
 		self
 	}
 
-	pub fn build( &mut self ) -> Result< Ubo, String >{
-		let ctx 		= glctx().create_buffer().ok_or_else( || "Unable to create buffer object for ubo" )?;
+	//Calcuate the Buffer Stride Information then setup ubo in gl
+	pub fn build( &mut self, bind_pnt: u32 ) -> Result< Ubo, String >{
+		let buf 		= Buffer::new_uniform()?;
 		let byte_len 	= self.calc() as usize;
 
 		let mut ubo = Ubo{
-			ctx,
+			buf,
 			name 		: "test".to_string(),
-			bind_point	: 0,
+			bind_point	: bind_pnt,
 			byte_len	: byte_len,
 			bytes 		: vec![ 0; byte_len ],
 			items		: HashMap::new(),
@@ -113,31 +71,21 @@ impl UboBuilder{
 
 		for i in &self.items{
 			ubo.items.insert( i.name.clone(), UboSpec{ 
-				offset		: i.offset as usize, 
+				offset		: i.offset as usize,
+				data_size	: i.data_size as usize,
 				data_type	: i.data_type.clone(),
 			} );
 		}
 
+		ubo.buf.bind();								// Bind it for work
+		ubo.buf.set_empty_f32( byte_len as f64 );	// Allocate Space in empty buf
+		ubo.buf.unbind();							// Unbind
+		ubo.buf.set_bindpoint( bind_pnt );			// Save Buffer to Uniform Buffer Bind point
+
 		Ok( ubo )
-
-		/*
-			// Finish Setting up UBO
-			ubo.bufferSize	= Ubo.calculate( ubo.items );			// Calc all the Offsets and Lengths
-			ubo.bufferID 	= gl.ctx.createBuffer();				// Create Standard Buffer
-			ubo.byteBuffer	= new ByteBuffer( ubo.bufferSize );
-			ubo.bindPoint	= bindPoint;
-
-			// GPU Buffer
-			gl.ctx.bindBuffer(gl.ctx.UNIFORM_BUFFER, ubo.bufferID);							// Bind it for work
-			gl.ctx.bufferData(gl.ctx.UNIFORM_BUFFER, ubo.bufferSize, gl.ctx.DYNAMIC_DRAW);	// Allocate Space in empty buf
-			gl.ctx.bindBuffer(gl.ctx.UNIFORM_BUFFER, null);									// Unbind
-			gl.ctx.bindBufferBase(gl.ctx.UNIFORM_BUFFER, bindPoint, ubo.bufferID);			// Save Buffer to Uniform Buffer Bind point
-
-			Cache.ubos.set( ubo.name, ubo );
-			return Ubo;
-		 */
 	}
 
+	// Get the Alignment Size and Byte Size for specific Types
 	fn get_size( &self, t: &DataType ) -> (u32, u32) { // ( Alignment, Size )
 		match t{
 			DataType::Float | DataType::Int | DataType::Bool
@@ -152,8 +100,8 @@ impl UboBuilder{
 	}
 
 	fn calc( &mut self ) -> u32 {
-		let mut block_size	= 16;	// Data size in Bytes, UBO using layout std140 needs to build out the struct in blocks of 16 bytes.
-		let mut offset		= 0;	// Offset in the buffer allocation
+		let mut block_size	= 16;			// Data size in Bytes, UBO using layout std140 needs to build out the struct in blocks of 16 bytes.
+		let mut offset		= 0;			// Offset in the buffer allocation
 		let mut size		: (u32, u32);	// Data Size of the current type
 		let mut ary_len		: u32;
 		let mut itm			: &mut Item;
@@ -232,177 +180,96 @@ impl UboBuilder{
 }
 
 
+//####################################################################################
+
+#[derive(Debug)]
+pub struct Ubo{
+	buf			: Buffer,
+	name		: String,
+	bind_point	: u32,
+	byte_len	: usize,
+	bytes		: Vec<u8>,
+	items		: HashMap<String, UboSpec>,
+}
+
+#[derive(Debug)]
+pub struct UboSpec{
+	offset		: usize,
+	data_size	: usize,
+	data_type	: DataType,
+}
+
 impl Ubo{
 	/////////////////////////////////////////////////////////////////////
-	// Constructors
+	// Methods
 	/////////////////////////////////////////////////////////////////////
-		/*
-		pub fn new( name: &str ) -> Result< Ubo, String >{
-			let ubo = Ubo{
-				ctx			: glctx().create_buffer().ok_or_else( || "Unable to create buffer object" )?,
-				name		: name.to_string(),
-				bind_point	: 0,
-				bytes		: Vec::new(),
-			};
-			Ok( ubo )
+		pub fn bind( &self ){ self.buf.bind(); }
+		pub fn unbind( &self ){ self.buf.unbind(); }
+		pub fn delete( &self ){ self.buf.delete(); }
+
+		// Pass the Binary array to the GPU Buffer.
+		pub fn update( &mut self ){	// Update needs mut, for some reason the sub buffer needs a mut array.
+			self.buf.bind();
+			self.buf.set_sub_u8( self.bytes.as_mut_slice(), 0 );
+			self.buf.unbind();
 		}
-		*/
+
 
 	/////////////////////////////////////////////////////////////////////
-	// 
+	// Data Writing
 	/////////////////////////////////////////////////////////////////////
-		pub fn bind( &self ){ glctx().bind_buffer( GL::UNIFORM_BUFFER, Some( &self.ctx ) ); }
-		pub fn unbind( &self ){ glctx().bind_buffer( GL::UNIFORM_BUFFER, None ); }
-		pub fn delete( &self ){ glctx().delete_buffer( Some( &self.ctx ) ); }
-
+		// Write One float to the Byte Array
 		pub fn set_f32( &mut self, name: &str, v:f32 ) -> &mut Self{
 			let offset	= self.items.get( name ).unwrap().offset;
 			let ary		= v.to_bits().to_le_bytes(); // Little endian WebGL Needs it. 
-
 			self.write( offset, &ary );
 			self
 		}
 
+		// Write Float Array to the Binary Array
+		pub fn set_f32_ary( &mut self, name: &str, ary: &[f32] ) -> &mut Self{
+			let itm			= self.items.get( name ).unwrap(); //= self.items.get( name ).unwrap().offset;
+			let data_size	= itm.data_size / 4; // Data_size in bytes, div by 4 to get float count
+
+			if ary.len() > data_size {
+				console_log!("Can not save F32 Array, its to big for ubo: {}", name );
+				return self;
+			}
+
+			//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			let mut offset	= itm.offset; 
+			let mut bary	: [u8; 4];
+			for i in 0..ary.len(){
+				bary = ary[ i ].to_bits().to_ne_bytes(); //If there is an issue, use le_bytes, Webgl uses Little Endian
+				for j in 0..4{
+					self.bytes[ offset ] = bary[ j ];
+					offset += 1;
+				}
+			}
+			self
+		}
+
+		// Helper function to quicky copy Bytes to the Array
 		pub fn write( &mut self, offset: usize, ary: &[u8] ){
 			for i in 0..ary.len(){ self.bytes[ offset+i ] = ary[i]; }
 		}
 }
 
 
-//		this.items 		= new Map();
-//		this.bindPoint	= null; 		// Need this to bind UBO to shaders later on.
-//		this.bufferID	= null;
-//		this.bufferSize	= 0;
-//		this.byteBuffer = null;
-//gl.ctx.bindBuffer(gl.ctx.UNIFORM_BUFFER, (isOn)? this.bufferID : null)
-//
-/*
+//####################################################################################
+// UBO CACHE
 
-			//let ctx = match gl.create_buffer() { Some( b ) => b, None => return Err("Unable to create buffer object".to_string()) };
-			let b = Buffer{
-				ctx			: 
-				elm_cnt		: 0,
-				stride		: 0,
-				offset		: 0,
-				comp_len,
-				buf_type,	
-				data_type,
-			};
+pub struct UboCache( pub HashMap< String, Ubo > );
 
+impl UboCache{
+	pub fn new() -> Self{ UboCache( HashMap::new() ) }
+}
 
-		static finalize( ubo, bindPoint ){
-			// Finish Setting up UBO
-			ubo.bufferSize	= Ubo.calculate( ubo.items );			// Calc all the Offsets and Lengths
-			ubo.bufferID 	= gl.ctx.createBuffer();				// Create Standard Buffer
-			ubo.byteBuffer	= new ByteBuffer( ubo.bufferSize );
-			ubo.bindPoint	= bindPoint;
+impl Deref for UboCache{
+	type Target = HashMap< String, Ubo >;
+	fn deref( &self ) -> &Self::Target{ &self.0 }
+}
 
-			// GPU Buffer
-			gl.ctx.bindBuffer(gl.ctx.UNIFORM_BUFFER, ubo.bufferID);							// Bind it for work
-			gl.ctx.bufferData(gl.ctx.UNIFORM_BUFFER, ubo.bufferSize, gl.ctx.DYNAMIC_DRAW);	// Allocate Space in empty buf
-			gl.ctx.bindBuffer(gl.ctx.UNIFORM_BUFFER, null);									// Unbind
-			gl.ctx.bindBufferBase(gl.ctx.UNIFORM_BUFFER, bindPoint, ubo.bufferID);			// Save Buffer to Uniform Buffer Bind point
-
-		//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-		// Setup UBOs
-		Ubo.build( "UBOGlobal", 0, [
-			"projViewMatrix",	"mat4",
-			"cameraPos",		"vec3",
-			"globalTime",		"float",
-			"screenSize",		"vec2"
-		])	.setItem( "screenSize", [ gl.width, gl.height ] );
-
-		//............................
-		Ubo.build( "UBOModel", 1, [
-			"modelMatrix",	"mat4",
-			"normalMatrix",	"mat3",
-		]);
-
-		//............................
-		Ubo.build( "UBOLighting", 2, [
-			"lightPosition",	"vec3",  
-			"lightDirection",	"vec3",
-			"lightColor",		"vec3"
-		])	.setItem( "lightPosition",	[  8.0,  4.0,  1.0 ] )
-			.setItem( "lightDirection",	[ -8.0, -4.0, -1.0 ] )
-			.setItem( "lightColor",		[  1.0,  1.0,  1.0 ] )
-			.update();
-
-		//............................
-		if( (App.useArmature) & 1 == 1 ){
-			let ubo = new Ubo( "UBOArmature" );
-			Ubo .addItem( ubo, "bones", "mat2x4", 90 )
-				.addItem( ubo, "scale", "vec3", 90 )
-				.addItem( ubo, "boneCount", "int" )
-				.finalize( ubo, 4 );
-
-			ubo.setItem( "boneCount", 2 );
-		}
-
-
-	///////////////////////////////////////////////////////
-	// STATIC SUPPORT AND DEBUG FUNCTION
-	///////////////////////////////////////////////////////
-		//Size of types and alignment for calculating offset positions
-		static getSize( type ){ 
-			switch(type){ //[Alignment,Size]
-				case "float": case "int": case "b": return [4,4];
-				case "mat2x4":	return [32,32]; //16*2
-				case "mat4": 	return [64,64]; //16*4
-				case "mat3":	return [48,48]; //16*3
-				case "vec2":	return [8,8];
-				case "vec3":	return [16,12]; //Special Case
-				case "vec4":	return [16,16];
-				default:		return [0,0];
-			}
-		}
-
-		static calculate( m ){
-			let blockSpace	= 16,	//Data size in Bytes, UBO using layout std140 needs to build out the struct in blocks of 16 bytes.
-				offset		= 0,	//Offset in the buffer allocation
-				size,				//Data Size of the current type
-				prevItem	= null,
-				key,itm, i;
-
-			for( [key,itm] of m ){
-				//.....................................
-				// When dealing with arrays, Each element takes up 16 bytes regardless of type, but if the type
-				// is a factor of 16, then that values times array length will work, in case of matrices
-				size = Ubo.getSize(itm.type);
-				if(itm.aryLen > 0){
-					for(i=0; i < 2; i++){
-						if(size[i] < 16)	size[i] = itm.aryLen * 16;
-						else				size[i] *= itm.aryLen;
-					}
-				}
-
-				//.....................................
-				// Check if there is enough block space, if not 
-				// give previous item the remainder block space
-				// If the block space is full and the size is equal too or greater, dont give back to previous
-				if(blockSpace >= size[0]) blockSpace -= size[1];
-				else if(blockSpace > 0 && prevItem && !(blockSpace == 16 && size[1] >= 16) ){
-					prevItem.blockSize += blockSpace;
-					offset 		+= blockSpace;
-					blockSpace	= 16 - size[1];
-				}
-
-				//.....................................
-				// Save data about the item
-				itm.offset		= offset;
-				itm.blockSize	= size[1];
-				itm.dataSize	= size[1];
-				
-				//.....................................
-				// Cleanup
-				offset			+= size[1];
-				prevItem		= itm;
-
-				if(blockSpace <= 0) blockSpace = 16; //Reset
-			}
-
-			return offset;
-		}
-
-
- */
+impl DerefMut for UboCache{
+	fn deref_mut( &mut self ) -> &mut Self::Target{ &mut self.0 }
+}

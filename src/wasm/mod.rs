@@ -9,6 +9,9 @@ use std::cell::{ RefCell, RefMut };
 use std::rc::Rc;
 
 
+use crate::World;
+
+
 //##################################################
 #[macro_use]
 pub mod macros;
@@ -16,13 +19,12 @@ pub mod buffer;		pub use buffer::{ Buffer };
 pub mod util;		pub use util::Util;
 pub mod vao;		pub use vao::{ Vao, VaoCache };
 pub mod shader;		pub use shader::{ Shader, UniformType, AttribLoc, ShaderCache };
-pub mod ubo;
+pub mod ubo;		pub use ubo::{ Ubo, UboCache };
 
 
 //##################################################
 thread_local!{
 	pub static GLOBAL_GL: RefCell< Option< Rc<GL>> > = RefCell::new( None );
-	pub static CANVAS_SIZE: RefCell< [i32;2] > = RefCell::new( [0,0] );
 }
 
 #[allow(non_snake_case)]
@@ -34,8 +36,6 @@ pub fn glctx()-> Rc<GL> {
 		}
 	})
 }
-
-pub fn get_canvas_size() -> [i32;2] { CANVAS_SIZE.with( |v|{ v.borrow().clone() } ) }
 
 
 //##################################################
@@ -58,38 +58,9 @@ pub fn get_webgl_context( c_name: &str ) -> Result< (), &'static str >{
 
 	console_log!( "set viewport {}, {}", w, h );
 	ctx.viewport( 0, 0, w, h );
+	World::set_size( w, h );
 
-	GLOBAL_GL.with(|v|{  v.replace( Some( Rc::new(ctx) ) );  });
-
-	CANVAS_SIZE.with(|v|{  v.replace( [w,h] );  }); //*v.borrow_mut() = [ canvas.client_width(), canvas.client_height() ];	
+	GLOBAL_GL.with(|v|{  v.replace( Some( Rc::new(ctx) ) );  });	
 
 	Ok(())
-}
-
-
-//##################################################
-pub struct Cache{
-	pub vao		: RefCell< VaoCache >,
-	pub shader	: RefCell< ShaderCache >,
-}
-
-impl Cache{
-	pub fn new() -> Self{
-		Cache{
-			vao		: RefCell::new( VaoCache::new() ),
-			shader	: RefCell::new( ShaderCache::new() ),
-		}
-	}
-
-	//////////////////////////////////////////////
-	// VAO
-	//////////////////////////////////////////////
-		pub fn insert_vao( &self, v: Vao ) -> usize{
-			let mut vao = self.vao.borrow_mut();
-			vao.insert( v )
-		}
-
-		pub fn get_vao_mut( &self, i: usize ) -> RefMut<Vao>{
-			RefMut::map( self.vao.borrow_mut(), |b|{ b.get_mut(i) })
-		}
 }

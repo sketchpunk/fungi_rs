@@ -1,16 +1,24 @@
 [package]
-name = "fungi_rs"
-version = "0.1.0"
+name 	= "fungi_rs"
+version	= "0.1.0"
 authors = ["sketchpunk"]
-edition = "2018"
+edition	= "2018"
+
 
 [lib]
-crate-type = ["cdylib"]
+crate-type	= ["cdylib"]
+
+
+[workspace]
+members		= [ "maths", "ecs", ]
+
 
 [dependencies]
-wasm-bindgen = "0.2.43"
-js-sys = "0.3.20"
-console_error_panic_hook = "0.1.6"
+maths						= { path = "./maths" }
+ecs							= { path = "./ecs" }
+wasm-bindgen				= "0.2.43"
+js-sys						= "0.3.20"
+console_error_panic_hook	= "0.1.6"
 
 
 [dependencies.web-sys]
